@@ -9,7 +9,7 @@
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 [![OWASP Top 10](https://img.shields.io/badge/OWASP-Top%2010-orange.svg)](https://owasp.org/Top10/)
 
-**Automated security scanning pipeline that detects OWASP Top 10 vulnerabilities in web applications, integrates directly into CI/CD workflows, and generates compliance-ready reports.**
+**Automated security scanning pipeline that detects OWASP Top 10 vulnerabilities in web applications, integrates directly into CI/CD workflows, and generates compliance-ready reports — with a real-time web dashboard for scan management.**
 
 </div>
 
@@ -41,7 +41,12 @@
                          │
     ┌────────────────────▼────────────────────────────────┐
     │              Reporting Engine                        │
-    │        HTML (Dark UI) │ JSON │ PDF │ SARIF           │
+    │        HTML (Dark UI) │ JSON │ SARIF                 │
+    └────────────────────────┬────────────────────────────┘
+                             │
+    ┌────────────────────────▼────────────────────────────┐
+    │           Web Dashboard (FastAPI + React)            │
+    │   Scan Management │ Live Progress │ Trend Charts     │
     └─────────────────────────────────────────────────────┘
 ```
 
@@ -50,13 +55,15 @@
 | Feature | Description |
 |---------|-------------|
 | 🔍 **6 OWASP Scanner Modules** | Injection (SQLi/XSS/CMDi), Broken Access Control, Crypto Failures, Misconfig, Vulnerable Components, Auth Failures |
+| 🖥️ **Web Dashboard** | React dark-themed UI with scan management, real-time WebSocket progress, and vulnerability drill-down |
 | 🚀 **CI/CD Integration** | GitHub Actions + GitLab CI templates with security gates |
-| 📊 **Professional Reports** | HTML dark-themed dashboard, JSON, SARIF for code scanning |
+| 📊 **Professional Reports** | HTML dark-themed report, JSON, SARIF for code scanning |
 | 🎯 **Target Profiling** | Technology fingerprinting, port scanning, HTTP method enumeration |
 | ⚡ **Async Engine** | Concurrent scanner execution with rate limiting |
 | 🔧 **Configurable** | YAML configs, scan profiles (quick/default/full/api/ci) |
 | 🐳 **Docker Ready** | Multi-stage build with security tools pre-installed |
 | 🔌 **Plugin Architecture** | Extensible scanner registry with decorator-based registration |
+| 💾 **Scan History** | SQLite-backed scan persistence with aggregate statistics |
 
 ## 🚀 Quick Start
 
@@ -64,18 +71,21 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Auto-VAPT.git
+git clone https://github.com/uchihashahin01/Auto-VAPT.git
 cd Auto-VAPT
 
 # Install with Poetry
 pip install poetry
 poetry install
 
+# Install frontend dependencies
+cd dashboard/frontend && npm install && npm run build && cd ../..
+
 # Or with Docker
 docker compose build
 ```
 
-### Basic Usage
+### CLI Usage
 
 ```bash
 # Quick scan
@@ -96,6 +106,23 @@ auto-vapt config-check configs/default.yaml
 # List available profiles
 auto-vapt profiles
 ```
+
+### 🖥️ Web Dashboard
+
+```bash
+# Start the dashboard server
+python -m uvicorn dashboard.app:app --port 8888
+
+# Open in browser
+# http://localhost:8888
+```
+
+The dashboard provides:
+- **Dashboard view** — Aggregate stats, severity distribution chart, OWASP category breakdown
+- **Scans view** — Full scan history with risk scores, severity counts, and pass/fail gates
+- **Scan Detail** — Expandable vulnerability cards with evidence, remediation, and CVSS scores
+- **New Scan** — Start scans from the browser with profile and rate limit configuration
+- **Live Progress** — Real-time WebSocket updates as scanners execute
 
 ### Docker Usage
 
@@ -163,7 +190,6 @@ vapt_scan:
 - **HTML** — Professional dark-themed interactive report with executive summary, severity breakdown, and remediation steps
 - **JSON** — Machine-readable for integration with other tools
 - **SARIF** — Static Analysis Results Interchange Format for GitHub Code Scanning
-- **PDF** — Compliance-ready document (requires WeasyPrint)
 
 ## ⚙️ Configuration
 
@@ -210,46 +236,70 @@ poetry run ruff check auto_vapt/
 
 # Type check
 poetry run mypy auto_vapt/ --ignore-missing-imports
+
+# Run dashboard in dev mode
+cd dashboard/frontend && npm run dev   # Frontend at :5173
+python -m uvicorn dashboard.app:app --reload --port 8888  # Backend at :8888
 ```
 
 ## 📁 Project Structure
 
 ```
 Auto-VAPT/
-├── auto_vapt/
-│   ├── __init__.py          # Package init
-│   ├── cli.py               # Click CLI interface
-│   ├── config.py            # Pydantic config system
-│   ├── models.py            # Data models (Vulnerability, ScanReport)
-│   ├── logger.py            # Structured logging
-│   ├── orchestrator.py      # Async scan orchestrator
-│   ├── ci.py                # CI/CD integration helpers
+├── auto_vapt/                       # Core scanner package
+│   ├── __init__.py
+│   ├── cli.py                       # Click CLI interface
+│   ├── config.py                    # Pydantic config system
+│   ├── models.py                    # Data models (Vulnerability, ScanReport)
+│   ├── logger.py                    # Structured logging (structlog)
+│   ├── orchestrator.py              # Async scan orchestrator
+│   ├── ci.py                        # CI/CD integration helpers
 │   ├── scanners/
-│   │   ├── base.py          # BaseScanner + plugin registry
-│   │   ├── profiler.py      # Target intelligence gathering
-│   │   ├── injection.py     # A03: SQLi, XSS, CMDi
-│   │   ├── broken_access.py # A01: Access control testing
-│   │   ├── crypto.py        # A02: TLS/SSL, HSTS, cookies
-│   │   ├── misconfig.py     # A05: Headers, CORS, debug
-│   │   ├── vulnerable_components.py  # A06: SCA
-│   │   └── auth_failures.py # A07: Auth & session
+│   │   ├── base.py                  # BaseScanner + plugin registry
+│   │   ├── profiler.py              # Target intelligence gathering
+│   │   ├── injection.py             # A03: SQLi, XSS, CMDi
+│   │   ├── broken_access.py         # A01: Access control testing
+│   │   ├── crypto.py                # A02: TLS/SSL, HSTS, cookies
+│   │   ├── misconfig.py             # A05: Headers, CORS, debug
+│   │   ├── vulnerable_components.py # A06: SCA
+│   │   └── auth_failures.py         # A07: Auth & session
 │   └── reporting/
-│       ├── __init__.py
-│       └── generator.py     # HTML report generator
+│       └── generator.py             # HTML report generator
+├── dashboard/                       # Web Dashboard
+│   ├── app.py                       # FastAPI backend (REST + WebSocket)
+│   ├── database.py                  # SQLite persistence layer
+│   └── frontend/                    # React + Vite frontend
+│       ├── src/
+│       │   ├── App.jsx              # Main dashboard component
+│       │   ├── api.js               # API service module
+│       │   └── index.css            # Dark theme CSS
+│       ├── index.html
+│       └── package.json
 ├── configs/
-│   └── default.yaml         # Default scan config
+│   └── default.yaml                 # Default scan config
 ├── ci-templates/
-│   └── gitlab-ci.yml        # GitLab CI template
+│   └── gitlab-ci.yml                # GitLab CI template
 ├── tests/
-│   └── test_models.py       # Unit tests
+│   └── test_models.py               # Unit tests
 ├── .github/workflows/
-│   ├── ci.yml               # Project CI
-│   └── vapt-scan.yml        # Reusable scan workflow
-├── Dockerfile               # Multi-stage Docker build
-├── docker-compose.yml       # Docker Compose setup
-├── pyproject.toml           # Poetry config
+│   ├── ci.yml                       # Project CI
+│   └── vapt-scan.yml                # Reusable scan workflow
+├── Dockerfile                       # Multi-stage Docker build
+├── docker-compose.yml               # Docker Compose setup
+├── pyproject.toml                   # Poetry config
 └── README.md
 ```
+
+## 🛣️ Roadmap
+
+- [ ] Web Crawler / Spider for full-site discovery
+- [ ] OWASP ZAP API integration
+- [ ] PDF report generation
+- [ ] Rate limiter implementation
+- [ ] Authenticated scanning support
+- [ ] More OWASP modules (A04, A08, A09, A10)
+- [ ] NVD/OSV CVE API integration
+- [ ] Blind SQLi detection
 
 ## 📜 License
 
