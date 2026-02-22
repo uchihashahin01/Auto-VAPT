@@ -22,6 +22,10 @@ python-nmap = "^0.7"
 structlog = "^24.1"
 beautifulsoup4 = "^4.12"
 lxml = "^5.1"
+fastapi = "^0.110"
+uvicorn = {version = "^0.27", extras = ["standard"]}
+websockets = "^12.0"
+aiosqlite = "^0.20"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
