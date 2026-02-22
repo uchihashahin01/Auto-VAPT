@@ -100,18 +100,48 @@ class InjectionScanner(BaseScanner):
     owasp_category = OWASPCategory.A03_INJECTION
 
     async def scan(self, target_url: str, **kwargs: Any) -> None:
-        """Scan target for injection vulnerabilities."""
+        """Scan target for injection vulnerabilities.
+
+        Uses pre-crawled forms from target_info when available,
+        plus local form discovery as a fallback.
+        """
         http_client: httpx.AsyncClient = kwargs.get("http_client") or httpx.AsyncClient(
             verify=False, timeout=httpx.Timeout(15.0), follow_redirects=True
         )
+        target_info = kwargs.get("target_info")
 
         try:
-            # Discover forms and input points
-            forms = await self._discover_forms(http_client, target_url)
+            # Use crawler-discovered forms if available, else fall back to manual
+            forms: list[dict[str, Any]] = []
+
+            if target_info and target_info.discovered_forms:
+                forms = target_info.discovered_forms
+                log.info("using_crawled_forms", count=len(forms))
+            else:
+                forms = await self._discover_forms(http_client, target_url)
+
+            # Also discover forms on crawled URLs (up to 10 extra pages)
+            if target_info and target_info.crawled_urls:
+                tested_urls = {target_url}
+                for crawled_url in target_info.crawled_urls[:10]:
+                    if crawled_url not in tested_urls:
+                        tested_urls.add(crawled_url)
+                        extra_forms = await self._discover_forms(http_client, crawled_url)
+                        forms.extend(extra_forms)
+
+            # Deduplicate forms by action URL
+            seen_actions: set[str] = set()
+            unique_forms: list[dict[str, Any]] = []
+            for form in forms:
+                action_key = f"{form.get('action', '')}|{form.get('method', '')}"
+                if action_key not in seen_actions:
+                    seen_actions.add(action_key)
+                    unique_forms.append(form)
+
             query_params = self._extract_query_params(target_url)
 
-            # Test each input point
-            for form in forms:
+            # Test each form
+            for form in unique_forms:
                 await self._test_form_sqli(http_client, target_url, form)
                 await self._test_form_xss(http_client, target_url, form)
                 await self._test_form_cmdi(http_client, target_url, form)
@@ -120,6 +150,14 @@ class InjectionScanner(BaseScanner):
             if query_params:
                 await self._test_params_sqli(http_client, target_url, query_params)
                 await self._test_params_xss(http_client, target_url, query_params)
+
+            # Test parameters from crawled URLs
+            if target_info and target_info.crawled_urls:
+                for crawled_url in target_info.crawled_urls[:15]:
+                    crawled_params = self._extract_query_params(crawled_url)
+                    if crawled_params:
+                        await self._test_params_sqli(http_client, crawled_url, crawled_params)
+                        await self._test_params_xss(http_client, crawled_url, crawled_params)
 
         finally:
             if "http_client" not in kwargs:

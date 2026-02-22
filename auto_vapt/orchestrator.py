@@ -16,6 +16,7 @@ from auto_vapt.logger import get_logger
 from auto_vapt.models import ScanReport, ScanStatus, TargetInfo
 from auto_vapt.scanners.base import get_registered_scanners
 from auto_vapt.scanners.profiler import profile_target
+from auto_vapt.crawler import WebCrawler
 
 log = get_logger(__name__)
 console = Console()
@@ -49,11 +50,19 @@ class ScanOrchestrator:
         console.print(f"  [green]✓[/] Technologies: {', '.join(target_info.technologies) or 'None detected'}")
         console.print(f"  [green]✓[/] HTTP Methods: {', '.join(target_info.http_methods) or 'Unknown'}")
 
-        console.print("\n[bold cyan]▶ Phase 2: Vulnerability Scanning[/]")
+        console.print("\n[bold cyan]▶ Phase 2: Web Crawling[/]")
+        await self._crawl_target(target_info)
+
+        console.print(f"  [green]✓[/] Pages discovered: {len(target_info.crawled_urls)}")
+        console.print(f"  [green]✓[/] Forms found: {len(target_info.discovered_forms)}")
+        console.print(f"  [green]✓[/] Parameters: {len(target_info.discovered_parameters)}")
+        console.print(f"  [green]✓[/] JS endpoints: {len(target_info.js_endpoints)}")
+
+        console.print("\n[bold cyan]▶ Phase 3: Vulnerability Scanning[/]")
         self.report.status = ScanStatus.SCANNING
         await self._run_scanners(target_info)
 
-        console.print("\n[bold cyan]▶ Phase 3: Report Generation[/]")
+        console.print("\n[bold cyan]▶ Phase 4: Report Generation[/]")
         self.report.status = ScanStatus.REPORTING
         await self._generate_reports()
 
@@ -65,6 +74,33 @@ class ScanOrchestrator:
         console.print(f"  [green]✓[/] Total vulnerabilities: {len(self.report.all_vulnerabilities)}")
 
         return self.report
+
+    async def _crawl_target(self, target_info: TargetInfo) -> None:
+        """Crawl the target to discover pages, forms, and parameters."""
+        try:
+            crawler = WebCrawler(
+                max_depth=self.config.max_depth,
+                max_pages=self.config.max_pages if hasattr(self.config, 'max_pages') else 100,
+                rate_limit=0.1,
+                verify_ssl=self.config.verify_ssl,
+                user_agent=self.config.user_agent,
+            )
+            result = await crawler.crawl(self.config.target.url)
+
+            # Merge crawl data into TargetInfo
+            target_info.crawled_urls = sorted(result.discovered_urls)
+            target_info.discovered_forms = [
+                {"url": f.url, "action": f.action, "method": f.method, "inputs": f.inputs}
+                for f in result.forms
+            ]
+            target_info.discovered_parameters = sorted(result.parameters)
+            target_info.js_endpoints = sorted(result.js_endpoints)
+            target_info.discovered_emails = sorted(result.emails)
+            target_info.html_comments = result.comments[:20]  # Limit
+
+        except Exception as e:
+            log.error("crawling_failed", error=str(e))
+            console.print(f"  [yellow]⚠ Crawling partial failure: {e}[/]")
 
     async def _profile_target(self) -> TargetInfo:
         """Profile the target to gather intelligence."""

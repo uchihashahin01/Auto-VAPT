@@ -103,6 +103,7 @@ class ScanConfig(BaseModel):
     verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
     follow_redirects: bool = Field(default=True, description="Follow HTTP redirects")
     max_depth: int = Field(default=3, ge=1, le=10, description="Max crawl depth")
+    max_pages: int = Field(default=100, ge=10, le=500, description="Max pages to crawl")
 
     @field_validator("profile")
     @classmethod

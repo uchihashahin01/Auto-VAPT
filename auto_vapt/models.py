@@ -101,6 +101,12 @@ class TargetInfo(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     robots_txt: str = ""
     sitemap_urls: list[str] = Field(default_factory=list)
+    crawled_urls: list[str] = Field(default_factory=list)
+    discovered_forms: list[dict[str, Any]] = Field(default_factory=list)
+    discovered_parameters: list[str] = Field(default_factory=list)
+    js_endpoints: list[str] = Field(default_factory=list)
+    discovered_emails: list[str] = Field(default_factory=list)
+    html_comments: list[str] = Field(default_factory=list)
 
 
 class ScanStatus(str, Enum):
