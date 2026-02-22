@@ -1,0 +1,60 @@
+# ============================================
+# Auto-VAPT: Docker Compose
+# ============================================
+version: "3.9"
+
+services:
+  # Main scanner service
+  auto-vapt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auto-vapt-scanner
+    volumes:
+      - ./reports:/app/reports
+      - ./configs:/app/configs:ro
+    environment:
+      - LOG_FORMAT=json
+    networks:
+      - vapt-network
+    depends_on:
+      zap:
+        condition: service_healthy
+
+  # OWASP ZAP daemon for deep scanning
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: auto-vapt-zap
+    command: zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.disablekey=true
+    ports:
+      - "8080:8080"
+    networks:
+      - vapt-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/JSON/core/view/version/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Dashboard (Phase 5)
+  # dashboard:
+  #   build:
+  #     context: ./dashboard
+  #     dockerfile: Dockerfile
+  #   container_name: auto-vapt-dashboard
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - DATABASE_URL=sqlite:///data/autovapt.db
+  #   volumes:
+  #     - dashboard-data:/data
+  #   networks:
+  #     - vapt-network
+
+networks:
+  vapt-network:
+    driver: bridge
+
+# volumes:
+#   dashboard-data:

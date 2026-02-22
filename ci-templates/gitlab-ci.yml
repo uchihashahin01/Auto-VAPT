@@ -1,0 +1,47 @@
+# Auto-VAPT GitLab CI Template
+# Usage: include this template in your .gitlab-ci.yml
+#
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/user/Auto-VAPT/main/ci-templates/gitlab-ci.yml'
+#
+#   vapt_scan:
+#     extends: .vapt-scan
+#     variables:
+#       TARGET_URL: "https://your-app.example.com"
+
+.vapt-scan:
+  stage: test
+  image: python:3.11-slim
+  
+  variables:
+    TARGET_URL: ""
+    SCAN_PROFILE: "ci"
+    FAIL_ON_SEVERITY: "HIGH"
+  
+  before_script:
+    - apt-get update && apt-get install -y nmap nikto
+    - pip install poetry
+    - poetry install --no-interaction
+  
+  script:
+    - |
+      poetry run auto-vapt scan \
+        "$TARGET_URL" \
+        --profile "$SCAN_PROFILE" \
+        --ci \
+        --format html json sarif \
+        --output ./scan-results
+  
+  artifacts:
+    when: always
+    paths:
+      - scan-results/
+    reports:
+      sast: scan-results/*.sarif
+    expire_in: 30 days
+  
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - when: manual
+      allow_failure: true

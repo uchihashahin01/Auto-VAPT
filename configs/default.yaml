@@ -1,0 +1,82 @@
+# Auto-VAPT Default Scan Configuration
+# =====================================
+
+profile: default
+
+target:
+  url: ""  # Set via CLI or override here
+  scope: []
+  exclude:
+    - "*/logout*"
+    - "*/static/*"
+    - "*.css"
+    - "*.js"
+    - "*.png"
+    - "*.jpg"
+    - "*.gif"
+  auth:
+    type: none
+
+# Scanner module configuration
+scanners:
+  injection:
+    enabled: true
+    timeout: 300
+    threads: 5
+
+  broken_access:
+    enabled: true
+    timeout: 300
+    threads: 3
+
+  crypto:
+    enabled: true
+    timeout: 180
+    threads: 2
+
+  misconfig:
+    enabled: true
+    timeout: 240
+    threads: 3
+
+  vulnerable_components:
+    enabled: true
+    timeout: 300
+    threads: 2
+
+  auth_failures:
+    enabled: true
+    timeout: 240
+    threads: 3
+
+# Report settings
+report:
+  output_dir: "./reports"
+  formats:
+    - html
+    - json
+  include_evidence: true
+  include_remediation: true
+  company_name: ""
+  company_logo: ""
+
+# CI/CD settings
+ci:
+  enabled: false
+  fail_on: HIGH
+  sarif_output: true
+  comment_pr: false
+  max_allowed:
+    CRITICAL: 0
+    HIGH: 0
+    MEDIUM: 10
+    LOW: 50
+
+# Global settings
+global_timeout: 1800
+max_concurrent_scanners: 3
+rate_limit: 10
+user_agent: "Auto-VAPT/1.0 Security Scanner"
+verify_ssl: true
+follow_redirects: true
+max_depth: 3

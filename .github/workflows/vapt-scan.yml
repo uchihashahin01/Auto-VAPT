@@ -1,0 +1,126 @@
+name: "Auto-VAPT Security Scan"
+
+on:
+  workflow_call:
+    inputs:
+      target_url:
+        description: "Target URL to scan"
+        required: true
+        type: string
+      scan_profile:
+        description: "Scan profile (quick, default, full, api, ci)"
+        required: false
+        default: "ci"
+        type: string
+      fail_on_severity:
+        description: "Minimum severity to fail pipeline (CRITICAL, HIGH, MEDIUM, LOW)"
+        required: false
+        default: "HIGH"
+        type: string
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Target URL to scan"
+        required: true
+      scan_profile:
+        description: "Scan profile"
+        required: false
+        default: "ci"
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  vapt-scan:
+    name: "🛡️ VAPT Security Scan"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Auto-VAPT
+        run: |
+          pip install poetry
+          poetry install --no-interaction
+
+      - name: Install Security Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nmap nikto
+
+      - name: Run Security Scan
+        id: scan
+        run: |
+          poetry run auto-vapt scan \
+            "${{ inputs.target_url || github.event.inputs.target_url }}" \
+            --profile "${{ inputs.scan_profile || github.event.inputs.scan_profile || 'ci' }}" \
+            --ci \
+            --format html json sarif \
+            --output ./scan-results
+        continue-on-error: true
+
+      - name: Upload SARIF Results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ./scan-results/
+        continue-on-error: true
+
+      - name: Upload Scan Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vapt-scan-reports
+          path: ./scan-results/
+          retention-days: 30
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const glob = require('glob');
+            const files = glob.sync('./scan-results/*.json');
+            if (files.length === 0) return;
+
+            const report = JSON.parse(fs.readFileSync(files[0], 'utf8'));
+            const summary = report.severity_summary || {};
+            const total = Object.values(summary).reduce((a, b) => a + b, 0);
+            const gate = report.pass_fail ? '✅ PASS' : '❌ FAIL';
+
+            const body = `## 🛡️ Auto-VAPT Security Scan Results
+
+            | Severity | Count |
+            |----------|-------|
+            | 🔴 Critical | ${summary.CRITICAL || 0} |
+            | 🟠 High | ${summary.HIGH || 0} |
+            | 🟡 Medium | ${summary.MEDIUM || 0} |
+            | 🔵 Low | ${summary.LOW || 0} |
+
+            **Total:** ${total} findings | **Security Gate:** ${gate}
+            **Risk Score:** ${report.risk_score?.toFixed(1) || 'N/A'}/100
+
+            📊 Full report available in pipeline artifacts.`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Security Gate Check
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "::error::Security gate FAILED — vulnerabilities exceed threshold"
+          exit 1

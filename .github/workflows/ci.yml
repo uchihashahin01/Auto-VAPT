@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: "Code Quality"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install poetry
+          poetry install --no-interaction
+      - name: Lint
+        run: poetry run ruff check auto_vapt/
+      - name: Type Check
+        run: poetry run mypy auto_vapt/ --ignore-missing-imports
+      - name: Tests
+        run: poetry run pytest tests/ -v --tb=short
