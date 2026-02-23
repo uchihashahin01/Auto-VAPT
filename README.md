@@ -109,20 +109,47 @@ auto-vapt profiles
 
 ### 🖥️ Web Dashboard
 
-```bash
-# Start the dashboard server
-python -m uvicorn dashboard.app:app --port 8888
+The dashboard runs as a **single process** — the FastAPI backend serves both the API and the React frontend.
 
-# Open in browser
-# http://localhost:8888
+#### Step 1: Start the Dashboard
+
+```bash
+# Make sure you're in the project directory and virtual environment is active
+cd Auto-VAPT
+source .venv/bin/activate
+
+# Start the dashboard (backend + frontend served together)
+python -m uvicorn dashboard.app:app --host 0.0.0.0 --port 8888
 ```
 
-The dashboard provides:
-- **Dashboard view** — Aggregate stats, severity distribution chart, OWASP category breakdown
-- **Scans view** — Full scan history with risk scores, severity counts, and pass/fail gates
-- **Scan Detail** — Expandable vulnerability cards with evidence, remediation, and CVSS scores
-- **New Scan** — Start scans from the browser with profile and rate limit configuration
-- **Live Progress** — Real-time WebSocket updates as scanners execute
+> **Note:** You must activate the virtual environment (`source .venv/bin/activate`) before starting the dashboard, otherwise Python cannot find the required dependencies.
+
+#### Step 2: Open in Browser
+
+Go to **http://localhost:8888** — you'll see the dashboard with stats cards, severity charts, and scan history.
+
+#### Step 3: Start a Scan from the Dashboard
+
+1. Click the **⚡ New Scan** button (top right)
+2. Enter the **Target URL** (e.g. `http://testphp.vulnweb.com`)
+3. Select a **Scan Profile**:
+   - `quick` — 2 scanners, fast results (~10s)
+   - `default` — All 6 scanners, standard depth (~60s)
+   - `full` — All scanners, deep crawl (~2 min)
+4. Adjust **Rate Limit** and **Timeout** if needed
+5. Click **🚀 Start Scan**
+6. Watch the **live progress bar** — real-time WebSocket updates show scanner status
+7. When complete, click the scan row to see **full vulnerability details**
+
+#### Dashboard Features
+
+| View | What It Shows |
+|------|--------------|
+| **Dashboard** | Aggregate stats, severity bar chart, OWASP category distribution, recent scans |
+| **Scans** | Complete scan history table with risk scores, severity counts (C/H/M/L), pass/fail gate |
+| **Scan Detail** | Expandable vulnerability cards — click any finding to see evidence, remediation, CVSS score |
+| **New Scan Modal** | Start scans with profile selection, rate limit, and timeout configuration |
+| **Live Progress** | Real-time scanning progress via WebSocket as each scanner module completes |
 
 ### Docker Usage
 
