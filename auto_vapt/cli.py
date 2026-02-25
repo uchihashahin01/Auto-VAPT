@@ -83,6 +83,7 @@ def cli(ctx: click.Context, verbose: bool, json_log: bool) -> None:
 @click.option("--rate-limit", default=10, type=int, help="Max requests per second.")
 @click.option("--timeout", default=1800, type=int, help="Global scan timeout in seconds.")
 @click.option("--no-ssl-verify", is_flag=True, help="Disable SSL certificate verification.")
+@click.option("--plugins", "plugin_dir", type=click.Path(exists=True), help="Directory with custom scanner plugins.")
 @click.pass_context
 def scan(
     ctx: click.Context,
@@ -95,6 +96,7 @@ def scan(
     rate_limit: int,
     timeout: int,
     no_ssl_verify: bool,
+    plugin_dir: str | None,
 ) -> None:
     """Run a vulnerability assessment scan against TARGET_URL.
 
@@ -122,6 +124,13 @@ def scan(
     # Display scan configuration summary
     _print_scan_config(config)
 
+    # Load plugins if directory specified
+    if plugin_dir:
+        from auto_vapt.plugins import load_plugins
+        count = load_plugins(plugin_dir)
+        if count:
+            console.print(f"  [green]✓[/] Loaded {count} plugin(s) from {plugin_dir}")
+
     # Run the scan
     from auto_vapt.orchestrator import ScanOrchestrator
 
@@ -147,6 +156,71 @@ def scan(
         sys.exit(1)
 
     console.print("[green bold]✓ Scan complete.[/]")
+
+
+@cli.command()
+@click.argument("scan_a")
+@click.argument("scan_b")
+def diff(scan_a: str, scan_b: str) -> None:
+    """Compare two scans to show new, resolved, and unchanged findings.
+
+    SCAN_A and SCAN_B are paths to JSON report files.
+
+    Example:
+        auto-vapt diff reports/scan-old.json reports/scan-new.json
+    """
+    import json
+    from auto_vapt.diff import diff_scans
+
+    for p in (scan_a, scan_b):
+        if not Path(p).exists():
+            console.print(f"[red]✗ File not found: {p}[/]")
+            sys.exit(1)
+
+    with open(scan_a) as f:
+        data_a = json.load(f)
+    with open(scan_b) as f:
+        data_b = json.load(f)
+
+    vulns_a = []
+    for r in data_a.get("results", []):
+        vulns_a.extend(r.get("vulnerabilities", []))
+    vulns_b = []
+    for r in data_b.get("results", []):
+        vulns_b.extend(r.get("vulnerabilities", []))
+
+    result = diff_scans(data_a, vulns_a, data_b, vulns_b)
+    d = result.to_dict()
+
+    delta = d["risk_delta"]
+    delta_str = f"+{delta}" if delta > 0 else str(delta)
+    delta_color = "red" if delta > 0 else "green" if delta < 0 else "dim"
+
+    console.print(Panel(
+        f"[bold]Scan A:[/] {scan_a}\n[bold]Scan B:[/] {scan_b}",
+        title="Scan Diff", border_style="cyan",
+    ))
+
+    table = Table(box=box.ROUNDED, border_style="cyan", show_header=False)
+    table.add_column("Metric", style="bold")
+    table.add_column("Value")
+    table.add_row("New Findings", f"[red]+{d['summary']['new_count']}[/]")
+    table.add_row("Resolved", f"[green]-{d['summary']['resolved_count']}[/]")
+    table.add_row("Unchanged", str(d["summary"]["unchanged_count"]))
+    table.add_row("Risk Delta", f"[{delta_color}]{delta_str}[/]")
+    console.print(table)
+
+    if result.new_vulns:
+        console.print("\n[red bold]New Vulnerabilities:[/]")
+        for v in result.new_vulns:
+            sev = v.get("severity", "INFO")
+            console.print(f"  [red]+[/] [{sev}] {v.get('title', 'Unknown')}")
+
+    if result.resolved_vulns:
+        console.print("\n[green bold]Resolved Vulnerabilities:[/]")
+        for v in result.resolved_vulns:
+            sev = v.get("severity", "INFO")
+            console.print(f"  [green]-[/] [{sev}] {v.get('title', 'Unknown')}")
 
 
 @cli.command(name="config-check")
@@ -182,16 +256,16 @@ def profiles() -> None:
         "quick", "Fast scan — injection + misconfig only", "1", "10m", "2"
     )
     table.add_row(
-        "default", "Standard scan — all OWASP Top 10 modules", "3", "30m", "6"
+        "default", "Standard scan — all OWASP Top 10 modules", "3", "30m", "10"
     )
     table.add_row(
-        "full", "Deep scan — max depth, all modules, thorough", "5", "30m", "6"
+        "full", "Deep scan — max depth, all modules, thorough", "5", "30m", "10"
     )
     table.add_row(
         "api", "API-focused — injection, access control, auth", "3", "30m", "3"
     )
     table.add_row(
-        "ci", "CI/CD optimized — balanced speed with coverage", "2", "15m", "6"
+        "ci", "CI/CD optimized — balanced speed with coverage", "2", "15m", "10"
     )
 
     console.print(table)
