@@ -83,6 +83,10 @@ class ScanConfig(BaseModel):
             "misconfig": ScannerConfig(),
             "vulnerable_components": ScannerConfig(),
             "auth_failures": ScannerConfig(),
+            "insecure_design": ScannerConfig(),
+            "data_integrity": ScannerConfig(),
+            "logging_failures": ScannerConfig(),
+            "ssrf": ScannerConfig(),
         }
     )
     report: ReportConfig = Field(default_factory=ReportConfig)

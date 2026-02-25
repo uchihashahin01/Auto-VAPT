@@ -14,6 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeEl
 from auto_vapt.config import ScanConfig
 from auto_vapt.logger import get_logger
 from auto_vapt.models import ScanReport, ScanStatus, TargetInfo
+from auto_vapt.rate_limiter import RateLimitedTransport
 from auto_vapt.scanners.base import get_registered_scanners
 from auto_vapt.scanners.profiler import profile_target
 from auto_vapt.crawler import WebCrawler
@@ -131,11 +132,46 @@ class ScanOrchestrator:
             return
 
         # Shared HTTP client for all scanners
+        transport = RateLimitedTransport(rate=float(self.config.rate_limit))
+        headers = {"User-Agent": self.config.user_agent}
+        auth = None
+
+        # Build auth from config
+        auth_config = self.config.target.auth
+        if auth_config and auth_config.type != "none":
+            if auth_config.type == "bearer" and auth_config.token:
+                headers["Authorization"] = f"Bearer {auth_config.token}"
+            elif auth_config.type == "cookie" and auth_config.cookie:
+                headers["Cookie"] = auth_config.cookie
+            elif auth_config.type == "basic" and auth_config.username:
+                auth = httpx.BasicAuth(auth_config.username, auth_config.password)
+            elif auth_config.type == "form" and auth_config.login_url:
+                # Perform form login to obtain session cookie
+                async with httpx.AsyncClient(
+                    verify=self.config.verify_ssl, follow_redirects=True
+                ) as login_client:
+                    resp = await login_client.post(
+                        auth_config.login_url,
+                        data={"username": auth_config.username, "password": auth_config.password},
+                    )
+                    cookies = resp.cookies
+                    if cookies:
+                        headers["Cookie"] = "; ".join(
+                            f"{k}={v}" for k, v in cookies.items()
+                        )
+            # Merge any custom auth headers
+            if auth_config.headers:
+                headers.update(auth_config.headers)
+
+            console.print(f"  [green]✓[/] Authenticated scanning ({auth_config.type})")
+
         async with httpx.AsyncClient(
             verify=self.config.verify_ssl,
             timeout=httpx.Timeout(15.0),
             follow_redirects=self.config.follow_redirects,
-            headers={"User-Agent": self.config.user_agent},
+            headers=headers,
+            auth=auth,
+            transport=transport,
         ) as http_client:
             semaphore = asyncio.Semaphore(self.config.max_concurrent_scanners)
 
@@ -187,6 +223,8 @@ class ScanOrchestrator:
                     await self._write_json_report(output_dir)
                 elif fmt == "html":
                     await self._write_html_report(output_dir)
+                elif fmt == "pdf":
+                    await self._write_pdf_report(output_dir)
                 elif fmt == "sarif":
                     await self._write_sarif_report(output_dir)
                 console.print(f"  [green]✓[/] {fmt.upper()} report generated")
@@ -209,6 +247,12 @@ class ScanOrchestrator:
         html = generate_html_report(self.report)
         with open(report_path, "w") as f:
             f.write(html)
+
+    async def _write_pdf_report(self, output_dir: Path) -> None:
+        """Write PDF report using WeasyPrint."""
+        from auto_vapt.reporting.generator import generate_pdf_report
+        report_path = output_dir / f"autovapt-report-{self.report.id[:8]}.pdf"
+        generate_pdf_report(self.report, report_path)
 
     async def _write_sarif_report(self, output_dir: Path) -> None:
         """Write SARIF report for code scanning integration."""
