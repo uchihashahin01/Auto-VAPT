@@ -36,6 +36,12 @@ export async function deleteScan(scanId) {
     return res.json();
 }
 
+export async function fetchScanDiff(scanAId, scanBId) {
+    const res = await fetch(`${API_BASE}/api/scans/diff/${scanAId}/${scanBId}`);
+    if (!res.ok) throw new Error('Failed to fetch scan diff');
+    return res.json();
+}
+
 export function connectWebSocket(scanId, onMessage) {
     const wsBase = API_BASE.replace('http', 'ws');
     const ws = new WebSocket(`${wsBase}/ws/scans/${scanId}`);

@@ -188,6 +188,29 @@ async def remove_scan(scan_id: str):
         conn.close()
 
 
+@app.get("/api/scans/diff/{scan_a_id}/{scan_b_id}")
+async def diff_scans_endpoint(scan_a_id: str, scan_b_id: str):
+    """Compare two scans and return the diff."""
+    from auto_vapt.diff import diff_scans
+
+    conn = get_db()
+    try:
+        scan_a = get_scan(conn, scan_a_id)
+        scan_b = get_scan(conn, scan_b_id)
+        if not scan_a:
+            raise HTTPException(status_code=404, detail=f"Scan {scan_a_id} not found")
+        if not scan_b:
+            raise HTTPException(status_code=404, detail=f"Scan {scan_b_id} not found")
+
+        vulns_a = get_scan_vulns(conn, scan_a_id)
+        vulns_b = get_scan_vulns(conn, scan_b_id)
+
+        result = diff_scans(dict(scan_a), vulns_a, dict(scan_b), vulns_b)
+        return result.to_dict()
+    finally:
+        conn.close()
+
+
 # ─── WebSocket ───────────────────────────────────────────────────────
 
 @app.websocket("/ws/scans/{scan_id}")
