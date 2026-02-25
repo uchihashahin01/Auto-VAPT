@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchStats, fetchScans, fetchScanDetail, startScan, deleteScan, connectWebSocket, fetchScanDiff } from './api';
-import './App.css';
 
 /* ═══════════════════════════════════════════════════════════════
    Auto-VAPT Dashboard — Complete Redesign

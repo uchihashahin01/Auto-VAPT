@@ -74,14 +74,7 @@ body::before {
 /* ═══════════════════ LAYOUT ═════════════════════════════════ */
 
 .app-layout {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
   min-height: 100vh;
-  transition: grid-template-columns var(--transition);
-}
-
-.app-layout.sidebar-collapsed {
-  grid-template-columns: var(--sidebar-collapsed) 1fr;
 }
 
 /* ─── Sidebar ────────────────────────────────────────────────── */
@@ -101,8 +94,12 @@ body::before {
   overflow: hidden;
 }
 
-.sidebar-collapsed .sidebar {
+.app-layout.sidebar-collapsed .sidebar {
   width: var(--sidebar-collapsed);
+}
+
+.app-layout.sidebar-collapsed .main-content {
+  margin-left: var(--sidebar-collapsed);
 }
 
 .sidebar-header {
@@ -251,9 +248,7 @@ body::before {
   flex-direction: column;
 }
 
-.sidebar-collapsed .main-content {
-  margin-left: var(--sidebar-collapsed);
-}
+
 
 /* ─── Top Bar ────────────────────────────────────────────────── */
 
@@ -1581,10 +1576,8 @@ code {
 }
 
 @media (max-width: 900px) {
-  .app-layout { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .main-content { margin-left: 0; }
-  .sidebar-collapsed .main-content { margin-left: 0; }
+  .main-content { margin-left: 0 !important; }
   .charts-row { grid-template-columns: 1fr; }
   .hero-stats { grid-template-columns: 1fr; }
   .detail-stats { grid-template-columns: 1fr; }
