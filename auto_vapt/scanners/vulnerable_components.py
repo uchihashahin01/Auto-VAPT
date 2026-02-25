@@ -70,6 +70,7 @@ class VulnerableComponentsScanner(BaseScanner):
             await self._check_js_libraries(http_client, target_url)
             await self._check_server_version(http_client, target_url)
             await self._check_generator_meta(http_client, target_url)
+            await self._check_osv_api(http_client, target_url)
         finally:
             if "http_client" not in kwargs:
                 await http_client.aclose()
@@ -179,5 +180,63 @@ class VulnerableComponentsScanner(BaseScanner):
                         remediation="Remove the generator meta tag. Keep WordPress updated.",
                         cwe_id="CWE-200",
                     ))
+        except httpx.RequestError:
+            pass
+
+    async def _check_osv_api(self, client: httpx.AsyncClient, url: str) -> None:
+        """Query OSV.dev API for known CVEs on detected libraries."""
+        try:
+            resp = await client.get(url)
+            content = resp.text
+
+            # Extract library versions we found
+            detected: list[tuple[str, str, str]] = []
+            for vuln_def in KNOWN_VULNS:
+                matches = re.findall(vuln_def["pattern"], content, re.IGNORECASE)
+                for version in matches:
+                    detected.append((vuln_def["lib"].lower(), version, "npm"))
+
+            for lib_name, version, ecosystem in detected:
+                try:
+                    osv_resp = await client.post(
+                        "https://api.osv.dev/v1/query",
+                        json={"package": {"name": lib_name, "ecosystem": ecosystem},
+                              "version": version},
+                        timeout=10.0,
+                    )
+                    if osv_resp.status_code == 200:
+                        data = osv_resp.json()
+                        vulns = data.get("vulns", [])
+                        for v in vulns[:3]:  # Limit to 3 per library
+                            osv_id = v.get("id", "")
+                            summary = v.get("summary", "Known vulnerability")
+                            aliases = v.get("aliases", [])
+                            cve_id = next((a for a in aliases if a.startswith("CVE-")), "")
+                            severity_data = v.get("database_specific", {}).get("severity", "")
+                            sev = Severity.MEDIUM
+                            cvss = 5.0
+                            if "CRITICAL" in str(severity_data).upper():
+                                sev, cvss = Severity.CRITICAL, 9.0
+                            elif "HIGH" in str(severity_data).upper():
+                                sev, cvss = Severity.HIGH, 7.5
+
+                            # Don't duplicate findings from hardcoded DB
+                            if any(cve_id == vd.get("cve") for vd in KNOWN_VULNS if cve_id):
+                                continue
+
+                            self.add_vulnerability(Vulnerability(
+                                title=f"[OSV] {lib_name} {version} — {osv_id}",
+                                description=summary,
+                                severity=sev,
+                                cvss_score=cvss,
+                                owasp_category=self.owasp_category,
+                                url=url,
+                                evidence=f"OSV ID: {osv_id} | Version: {version}",
+                                remediation=f"Update {lib_name} to a patched version.",
+                                cve_ids=[cve_id] if cve_id else [],
+                                cwe_id="CWE-1104",
+                            ))
+                except (httpx.RequestError, Exception):
+                    pass  # OSV API unavailable — fall back to hardcoded DB
         except httpx.RequestError:
             pass
