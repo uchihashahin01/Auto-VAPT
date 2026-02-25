@@ -15,6 +15,11 @@ from auto_vapt.scanners import (  # noqa: F401
     misconfig,
     vulnerable_components,
     auth_failures,
+    zap_scanner,
+    insecure_design,
+    data_integrity,
+    logging_failures,
+    ssrf,
 )
 
 __all__ = [
