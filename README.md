@@ -54,15 +54,19 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🔍 **6 OWASP Scanner Modules** | Injection (SQLi/XSS/CMDi), Broken Access Control, Crypto Failures, Misconfig, Vulnerable Components, Auth Failures |
-| 🖥️ **Web Dashboard** | React dark-themed UI with scan management, real-time WebSocket progress, and vulnerability drill-down |
+| 🔍 **10 OWASP Scanner Modules** | Full OWASP Top 10 coverage: Injection (SQLi/XSS/CMDi + Blind SQLi), Broken Access Control, Crypto Failures, Insecure Design, Misconfig, Vulnerable Components (OSV API), Auth Failures, Data Integrity, Logging Failures, SSRF |
+| 🕷️ **OWASP ZAP Integration** | Optional integration with OWASP ZAP for deep active scanning via ZAP API |
+| 🖥️ **Interactive Web Dashboard** | React dark-themed UI with sidebar navigation, animated charts (donut, gauge, sparklines), scan comparison, real-time WebSocket progress, and vulnerability drill-down |
 | 🚀 **CI/CD Integration** | GitHub Actions + GitLab CI templates with security gates |
-| 📊 **Professional Reports** | HTML dark-themed report, JSON, SARIF for code scanning |
+| 📊 **Professional Reports** | HTML dark-themed report, JSON, PDF (WeasyPrint), SARIF for code scanning |
 | 🎯 **Target Profiling** | Technology fingerprinting, port scanning, HTTP method enumeration |
-| ⚡ **Async Engine** | Concurrent scanner execution with rate limiting |
+| ⚡ **Async Engine** | Concurrent scanner execution with token-bucket rate limiting |
+| 🔐 **Authenticated Scanning** | Bearer, cookie, basic, and form-based authentication support |
+| 🔌 **Plugin System** | Load custom scanner modules from a directory at runtime |
+| 📈 **Scan Diffing** | Compare two scans to track new, resolved, and unchanged vulnerabilities |
+| 🔔 **Notifications** | Slack webhook, email (SMTP), and generic webhook alerts on scan completion |
 | 🔧 **Configurable** | YAML configs, scan profiles (quick/default/full/api/ci) |
 | 🐳 **Docker Ready** | Multi-stage build with security tools pre-installed |
-| 🔌 **Plugin Architecture** | Extensible scanner registry with decorator-based registration |
 | 💾 **Scan History** | SQLite-backed scan persistence with aggregate statistics |
 
 ## 🚀 Quick Start
@@ -85,17 +89,36 @@ cd dashboard/frontend && npm install && npm run build && cd ../..
 docker compose build
 ```
 
+### Quick Launch
+
+```bash
+# Start both backend and frontend with one command
+./start.sh
+
+# Dashboard → http://localhost:5173
+# API       → http://localhost:8888/api/health
+```
+
 ### CLI Usage
 
 ```bash
 # Quick scan
 auto-vapt scan https://target.com -p quick
 
-# Full scan with all modules
-auto-vapt scan https://target.com -p full -f html json
+# Full scan with all modules + PDF report
+auto-vapt scan https://target.com -p full -f html json pdf
 
 # CI/CD mode (exits non-zero on HIGH+ findings)
 auto-vapt scan https://target.com --ci --format sarif
+
+# Authenticated scanning (with bearer token in config)
+auto-vapt scan https://target.com -c configs/auth-config.yaml
+
+# Load custom scanner plugins
+auto-vapt scan https://target.com --plugins ./my-plugins/
+
+# Compare two scans (diff)
+auto-vapt diff reports/scan-old.json reports/scan-new.json
 
 # Using a config file
 auto-vapt scan https://target.com -c configs/default.yaml
@@ -167,10 +190,10 @@ docker compose run auto-vapt scan https://target.com -p full
 | Profile | Depth | Timeout | Scanners | Use Case |
 |---------|-------|---------|----------|----------|
 | `quick` | 1 | 10m | 2 | Fast CI checks |
-| `default` | 3 | 30m | 6 | Standard assessments |
-| `full` | 5 | 30m | 6 | Deep penetration testing |
+| `default` | 3 | 30m | 10 | Standard assessments |
+| `full` | 5 | 30m | 10 | Deep penetration testing |
 | `api` | 3 | 30m | 3 | API security testing |
-| `ci` | 2 | 15m | 6 | CI/CD pipeline integration |
+| `ci` | 2 | 15m | 10 | CI/CD pipeline integration |
 
 ## 🔍 OWASP Coverage
 
@@ -178,10 +201,14 @@ docker compose run auto-vapt scan https://target.com -p full
 |---|----------|---------------|-------|
 | A01 | Broken Access Control | `broken_access.py` | Admin path discovery, sensitive files, path traversal, directory listing |
 | A02 | Cryptographic Failures | `crypto.py` | TLS/SSL analysis, HSTS, certificate validation, cookie security |
-| A03 | Injection | `injection.py` | SQL injection, XSS (reflected), command injection |
+| A03 | Injection | `injection.py` | SQL injection (error + blind), XSS (reflected), command injection |
+| A04 | Insecure Design | `insecure_design.py` | Business logic flaws, insecure defaults, missing rate limits |
 | A05 | Security Misconfiguration | `misconfig.py` | Security headers, CORS, debug endpoints, default credentials |
-| A06 | Vulnerable Components | `vulnerable_components.py` | JS library CVE checking, server version analysis |
+| A06 | Vulnerable Components | `vulnerable_components.py` | JS library CVE checking, server version analysis, NVD/OSV lookup |
 | A07 | Auth Failures | `auth_failures.py` | Brute-force, username enumeration, session management, JWT |
+| A08 | Data Integrity Failures | `data_integrity.py` | SRI checks, insecure deserialization, unsigned updates |
+| A09 | Logging & Monitoring Failures | `logging_failures.py` | Missing security headers, error disclosure, log injection |
+| A10 | SSRF | `ssrf.py` | Server-side request forgery, internal service probing |
 
 ## 🔄 CI/CD Integration
 
@@ -215,6 +242,7 @@ vapt_scan:
 ## 📊 Report Formats
 
 - **HTML** — Professional dark-themed interactive report with executive summary, severity breakdown, and remediation steps
+- **PDF** — Printable PDF report via WeasyPrint (install with `poetry install -E pdf`)
 - **JSON** — Machine-readable for integration with other tools
 - **SARIF** — Static Analysis Results Interchange Format for GitHub Code Scanning
 
@@ -281,17 +309,27 @@ Auto-VAPT/
 │   ├── logger.py                    # Structured logging (structlog)
 │   ├── orchestrator.py              # Async scan orchestrator
 │   ├── ci.py                        # CI/CD integration helpers
+│   ├── crawler.py                   # Web crawler / spider
+│   ├── diff.py                      # Scan comparison / diffing
+│   ├── notifications.py             # Slack, email & webhook alerts
+│   ├── plugins.py                   # Plugin loader for custom scanners
+│   ├── rate_limiter.py              # Token-bucket rate limiter
 │   ├── scanners/
 │   │   ├── base.py                  # BaseScanner + plugin registry
 │   │   ├── profiler.py              # Target intelligence gathering
-│   │   ├── injection.py             # A03: SQLi, XSS, CMDi
+│   │   ├── injection.py             # A03: SQLi (error + blind), XSS, CMDi
 │   │   ├── broken_access.py         # A01: Access control testing
 │   │   ├── crypto.py                # A02: TLS/SSL, HSTS, cookies
+│   │   ├── insecure_design.py       # A04: Insecure design patterns
 │   │   ├── misconfig.py             # A05: Headers, CORS, debug
-│   │   ├── vulnerable_components.py # A06: SCA
-│   │   └── auth_failures.py         # A07: Auth & session
+│   │   ├── vulnerable_components.py # A06: SCA + NVD/OSV CVE lookup
+│   │   ├── auth_failures.py         # A07: Auth & session
+│   │   ├── data_integrity.py        # A08: Data integrity failures
+│   │   ├── logging_failures.py      # A09: Logging & monitoring
+│   │   ├── ssrf.py                  # A10: Server-side request forgery
+│   │   └── zap_scanner.py           # OWASP ZAP API integration
 │   └── reporting/
-│       └── generator.py             # HTML report generator
+│       └── generator.py             # HTML + PDF report generator
 ├── dashboard/                       # Web Dashboard
 │   ├── app.py                       # FastAPI backend (REST + WebSocket)
 │   ├── database.py                  # SQLite persistence layer
@@ -307,10 +345,13 @@ Auto-VAPT/
 ├── ci-templates/
 │   └── gitlab-ci.yml                # GitLab CI template
 ├── tests/
-│   └── test_models.py               # Unit tests
+│   ├── test_models.py               # Unit tests
+│   ├── test_integration.py          # Integration tests
+│   └── test_crawler_live.py         # Live crawler tests
 ├── .github/workflows/
 │   ├── ci.yml                       # Project CI
 │   └── vapt-scan.yml                # Reusable scan workflow
+├── start.sh                         # Launch backend + frontend together
 ├── Dockerfile                       # Multi-stage Docker build
 ├── docker-compose.yml               # Docker Compose setup
 ├── pyproject.toml                   # Poetry config
@@ -319,14 +360,21 @@ Auto-VAPT/
 
 ## 🛣️ Roadmap
 
-- [ ] Web Crawler / Spider for full-site discovery
-- [ ] OWASP ZAP API integration
-- [ ] PDF report generation
-- [ ] Rate limiter implementation
-- [ ] Authenticated scanning support
-- [ ] More OWASP modules (A04, A08, A09, A10)
-- [ ] NVD/OSV CVE API integration
-- [ ] Blind SQLi detection
+- [x] Web Crawler / Spider for full-site discovery
+- [x] OWASP ZAP API integration
+- [x] PDF report generation
+- [x] Rate limiter implementation
+- [x] Authenticated scanning support
+- [x] More OWASP modules (A04, A08, A09, A10)
+- [x] NVD/OSV CVE API integration
+- [x] Blind SQLi detection
+- [x] Plugin system for custom scanners
+- [x] Scan diffing / comparison
+- [x] Notifications (Slack, email, webhooks)
+- [x] Dashboard UI revamp (animated charts, compare view)
+- [ ] Multi-target campaign mode
+- [ ] REST API authentication for dashboard
+- [ ] Historical trend analysis
 
 ## 📜 License
 
