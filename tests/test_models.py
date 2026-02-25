@@ -113,7 +113,7 @@ class TestConfig:
         config = create_config_from_args(target_url="https://example.com")
         assert config.target.url == "https://example.com"
         assert config.profile == "default"
-        assert len(config.scanners) == 6
+        assert len(config.scanners) == 10
 
     def test_quick_profile(self):
         from auto_vapt.config import create_config_from_args
