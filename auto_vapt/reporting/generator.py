@@ -1,8 +1,9 @@
-"""HTML report generator with professional styling."""
+"""HTML and PDF report generator with professional styling."""
 
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from auto_vapt.models import ScanReport, Severity
 
@@ -216,3 +217,22 @@ footer {{ text-align: center; padding: 2rem; color: var(--muted); font-size: 0.8
 
 </body>
 </html>"""
+
+
+def generate_pdf_report(report: ScanReport, output_path: str | Path) -> None:
+    """Generate a PDF report from the HTML report using WeasyPrint.
+
+    Args:
+        report: The scan report data.
+        output_path: Path to write the PDF file.
+    """
+    try:
+        from weasyprint import HTML
+    except ImportError:
+        raise ImportError(
+            "WeasyPrint is required for PDF generation. "
+            "Install it with: pip install weasyprint"
+        )
+
+    html_content = generate_html_report(report)
+    HTML(string=html_content).write_pdf(str(output_path))
